@@ -24,6 +24,7 @@ package org.mobicents.servlet.sip.example;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Properties;
 
@@ -48,6 +49,9 @@ public class ChatroomSipServlet extends SipServlet {
 	/** Context attribute key to store user list. */
     public final static String USER_LIST="userList";
     
+	/** Context attribute key to store registered users. */
+    public final static String USER_REGISTRY="userRegistry";
+
     private static final String CONTENT_TYPE = "text/plain;charset=UTF-8";
     
     /** Init parameter key to retrieve the chatroom's address. */
@@ -72,7 +76,8 @@ public class ChatroomSipServlet extends SipServlet {
 		} catch (NamingException e) {
 			throw new ServletException("Uh oh -- JNDI problem !", e);
 		}
-		getServletContext().setAttribute(USER_LIST,new ArrayList<String>());
+		getServletContext().setAttribute(USER_LIST, new ArrayList<String>());
+		getServletContext().setAttribute(USER_REGISTRY, new HashMap<String, String>());
         serverAddress = getServletConfig().getInitParameter(CHATROOM_SERVER_NAME);
         logger.info("serverAddress is : " + serverAddress);
 	}
@@ -88,7 +93,23 @@ public class ChatroomSipServlet extends SipServlet {
 		super.destroy();
 	}
 	
-	/** This is called by the container when a MESSAGE message arrives. */    
+    @Override
+    protected void doRegister(SipServletRequest req) throws ServletException, IOException 
+	{
+		logger.info("Received register request: " + req.getTo());
+		
+        String incomingUser = req.getFrom().getURI().toString();
+        String contact = req.getHeader("Contact"); 
+        String currentAddr = contact.substring(1, contact.length() - 2);
+		registerUser(incomingUser, currentAddr);
+		logger.info(registeredUsers());
+		
+		int response = SipServletResponse.SC_OK;
+		SipServletResponse resp = req.createResponse(response);
+		resp.send();
+	}
+
+    /** This is called by the container when a MESSAGE message arrives. */    
 	protected void doMessage(SipServletRequest request) throws 
             ServletException, IOException {
 
@@ -183,7 +204,7 @@ public class ChatroomSipServlet extends SipServlet {
         
         SipApplicationSession session = factory.createApplicationSession();
         SipServletRequest request = factory.createRequest(session, 
-                "MESSAGE", serverAddress, to);
+                "MESSAGE", serverAddress, getUserAddr(to));
         request.setContent(message.getBytes(), CONTENT_TYPE);
         request.send();
     }
@@ -202,13 +223,35 @@ public class ChatroomSipServlet extends SipServlet {
         List<String> list = (List<String>)getServletContext().getAttribute(USER_LIST);
         list.remove(from);
     }
+
+    private void registerUser(String username, String address) {
+        HashMap<String, String> registry = (HashMap<String, String>)getServletContext().getAttribute(USER_REGISTRY);
+        registry.put(username, address);
+    }
+
+    private void unregisterUser(String username) {
+        HashMap<String, String> registry = (HashMap<String, String>)getServletContext().getAttribute(USER_REGISTRY);
+        registry.remove(username);
+    }
+
+    private boolean isRegistered(String username) {
+        HashMap<String, String> registry = (HashMap<String, String>)getServletContext().getAttribute(USER_REGISTRY);
+        return registry.containsKey(username);
+    }
+
+    private String registeredUsers() {
+        HashMap<String, String> registry = (HashMap<String, String>)getServletContext().getAttribute(USER_REGISTRY);
+
+        String users = "";
+        for (String username: registry.keySet())
+        	users = users + username + "::" + registry.get(username) + "\n";
+        
+        return users;
+    }
+
+    private String getUserAddr(String username) {
+        HashMap<String, String> registry = (HashMap<String, String>)getServletContext().getAttribute(USER_REGISTRY);
+        return registry.get(username);
+    }
     
-    @Override
-    protected void doRegister(SipServletRequest req) throws ServletException, IOException 
-	{
-		logger.info("Received register request: " + req.getTo());
-		int response = SipServletResponse.SC_OK;
-		SipServletResponse resp = req.createResponse(response);
-		resp.send();
-	}
 }
